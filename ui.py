@@ -1,96 +1,80 @@
-"""
-ui.py - Drawing, Screens, Buttons, Particles, Animations
-"""
-
 import pygame
 import math
 import random
 
 # ── Screens ──────────────────────────────────────────────
-SCREEN_MENU      = "menu"
-SCREEN_GAME      = "game"
-SCREEN_RULES     = "rules"
-SCREEN_SETTINGS  = "settings"
-SCREEN_GAMEOVER  = "gameover"
+SCREEN_NAME_INPUT   = "name_input"
+SCREEN_MENU         = "menu"
+SCREEN_GAME         = "game"
+SCREEN_RULES        = "rules"
+SCREEN_SETTINGS     = "settings"
+SCREEN_GAMEOVER     = "gameover"
+SCREEN_PAUSE        = "pause"
+SCREEN_SAVE         = "save"
+SCREEN_LOAD         = "load"
+SCREEN_HISTORY      = "history"
+SCREEN_EXIT_CONFIRM = "exit_confirm"
 
-# ── Palette ──────────────────────────────────────────────
 # ── Palette (Premium Deep Themes) ────────────────────────
-C_BG_TOP    = (15,  25,  60)   # Deep Navy
-C_BG_BOT    = (5,   8,   15)   # Almost Black Blue
-C_TILE_DARK = (40,  50,  80)   # Blueish Grey
-C_TILE_EDGE = (70,  90, 140)
-C_GOLD      = (255, 200,  50)
-C_PLAYER    = (80, 160, 255)
-C_AI        = (255,  80, 100)
-C_TEXT      = (240, 245, 255)
-C_DIM       = (140, 160, 200)
+C_BG_TOP    = (15,  20,  50)   # Deep Indigo
+C_BG_BOT    = (5,   5,   15)   # Midnight Black
+C_TILE_DARK = (45,  55,  85)   # Deep Slate Blue
+C_TILE_EDGE = (75,  95, 145)
+C_GOLD      = (255, 205,  60)
+C_PLAYER    = (70, 150, 255)
+C_AI        = (255,  70,  90)
+C_TEXT      = (230, 240, 255)
+C_DIM       = (130, 150, 190)
 C_WHITE     = (255, 255, 255)
 C_BLACK     = (0,   0,   0)
-C_ACCENT    = (120, 100, 255)
+C_ACCENT    = (110, 90, 255)
+C_SUCCESS   = (60, 180, 80)
+C_DANGER    = (200, 50, 70)
 
+# ── Assets Cache ──────────────────────────────────────────
+_font_cache = {}
 
-# ═══════════════════════════════════════════════════════════
-# Particles
-# ═══════════════════════════════════════════════════════════
-class Particle:
-    def __init__(self, w, h):
-        self.reset(w, h)
-
-    def reset(self, w, h):
-        self.x  = random.uniform(0, w)
-        self.y  = random.uniform(0, h)
-        self.r  = random.uniform(1, 3)
-        self.vx = random.uniform(-0.3, 0.3)
-        self.vy = random.uniform(-0.5, -0.1)
-        self.alpha = random.randint(40, 130)
-        self.col = random.choice([C_PLAYER, C_AI, C_GOLD, (180,180,255)])
-
-    def update(self, w, h):
-        self.x += self.vx
-        self.y += self.vy
-        if self.y < -5 or self.x < -5 or self.x > w+5:
-            self.reset(w, h)
-            self.y = h + 5
-
-
-class ParticleSystem:
-    def __init__(self, w, h, count=60):
-        self.w = w
-        self.h = h
-        self.particles = [Particle(w, h) for _ in range(count)]
-
-    def update(self):
-        for p in self.particles:
-            p.update(self.w, self.h)
-
-    def draw(self, surf):
-        for p in self.particles:
-            s = pygame.Surface((int(p.r*2+2), int(p.r*2+2)), pygame.SRCALPHA)
-            pygame.draw.circle(s, (*p.col, p.alpha), (int(p.r+1), int(p.r+1)), int(p.r))
-            surf.blit(s, (int(p.x - p.r), int(p.y - p.r)))
-
+def get_font(size, bold=False):
+    key = (size, bold)
+    if key not in _font_cache:
+        # High-clarity and emoji-capable fonts
+        fonts = ["Segoe UI Emoji", "Segoe UI Symbol", "Verdana", "Tahoma", "Arial"]
+        font_path = None
+        for f in fonts:
+            font_path = pygame.font.match_font(f)
+            if font_path: break
+        
+        try:
+            if font_path:
+                _font_cache[key] = pygame.font.Font(font_path, size)
+            else:
+                _font_cache[key] = pygame.font.SysFont("Arial", size, bold=bold)
+        except:
+            _font_cache[key] = pygame.font.Font(None, size)
+    return _font_cache[key]
 
 # ═══════════════════════════════════════════════════════════
-# Button
+# Components
 # ═══════════════════════════════════════════════════════════
+
 class Button:
-    def __init__(self, cx, cy, w, h, label, color=C_PLAYER, font=None):
-        self.rect   = pygame.Rect(0, 0, w, h)
+    def __init__(self, cx, cy, w, h, label, color=C_PLAYER, font=None, icon=None):
+        self.rect = pygame.Rect(0, 0, w, h)
         self.rect.center = (cx, cy)
-        self.label  = label
-        self.color  = color
-        self.font   = font
+        self.label = label
+        self.color = color
+        self.font = font
+        self.icon = icon
         self.hovered = False
-        self.scale   = 1.0          # for press animation
+        self.scale = 1.0
         self._press_t = 0.0
 
     def update(self, mx, my, dt):
         self.hovered = self.rect.collidepoint(mx, my)
         if self._press_t > 0:
-            self._press_t -= dt * 6
+            self._press_t -= dt * 7
             self.scale = 1.0 - 0.08 * max(0, self._press_t)
-        else:
-            self.scale = 1.0
+        else: self.scale = 1.0
 
     def on_click(self, mx, my):
         if self.rect.collidepoint(mx, my):
@@ -101,324 +85,345 @@ class Button:
     def draw(self, surf):
         r = self.rect
         if self.scale != 1.0:
-            sw = int(r.w * self.scale)
-            sh = int(r.h * self.scale)
-            r2 = pygame.Rect(0, 0, sw, sh)
-            r2.center = r.center
-        else:
-            r2 = r
+            sw, sh = int(r.w * self.scale), int(r.h * self.scale)
+            r2 = pygame.Rect(0, 0, sw, sh); r2.center = r.center
+        else: r2 = r
 
-        # Glow behind button when hovered
         if self.hovered:
-            glow = pygame.Surface((r2.w+30, r2.h+30), pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*self.color, 55), glow.get_rect(), border_radius=22)
-            surf.blit(glow, (r2.x-15, r2.y-15))
+            glow = pygame.Surface((r2.w+40, r2.h+40), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*self.color, 60), glow.get_rect(), border_radius=22)
+            surf.blit(glow, (r2.x-20, r2.y-20))
 
-        # Button body
-        pygame.draw.rect(surf, self.color, r2, border_radius=16)
-        # Highlight strip
-        hl = pygame.Surface((r2.w-8, r2.h//2-4), pygame.SRCALPHA)
-        hl.fill((255,255,255,25))
-        surf.blit(hl, (r2.x+4, r2.y+4))
-        # Border
-        bc = (min(self.color[0]+60,255), min(self.color[1]+60,255), min(self.color[2]+60,255))
-        pygame.draw.rect(surf, bc, r2, width=2, border_radius=16)
+        # Body with gradient-like shading
+        pygame.draw.rect(surf, self.color, r2, border_radius=12)
+        pygame.draw.rect(surf, (min(255, self.color[0]+40), min(255, self.color[1]+40), min(255, self.color[2]+40)), r2, width=2, border_radius=12)
+        
+        # Shine
+        shine = pygame.Surface((r2.w, r2.h//2), pygame.SRCALPHA)
+        shine.fill((255,255,255,20))
+        surf.blit(shine, (r2.x, r2.y))
 
         if self.font:
-            txt = self.font.render(self.label, True, C_WHITE)
+            full_text = f"{self.icon} {self.label}" if self.icon else self.label
+            txt = self.font.render(full_text, True, C_WHITE)
             surf.blit(txt, txt.get_rect(center=r2.center))
 
+class Slider:
+    def __init__(self, cx, cy, w, label, value=0.5):
+        self.rect = pygame.Rect(cx - w//2, cy, w, 10)
+        self.label = label
+        self.value = value
+        self.dragging = False
+
+    def update(self, mx, my, clicked):
+        if clicked and self.rect.inflate(0, 30).collidepoint(mx, my):
+            self.dragging = True
+        if not clicked: self.dragging = False
+        
+        if self.dragging:
+            self.value = max(0, min(1, (mx - self.rect.x) / self.rect.w))
+
+    def draw(self, surf):
+        pygame.draw.rect(surf, C_TILE_DARK, self.rect, border_radius=5)
+        fill_w = int(self.rect.w * self.value)
+        if fill_w > 0:
+            pygame.draw.rect(surf, C_PLAYER, (self.rect.x, self.rect.y, fill_w, 10), border_radius=5)
+        
+        handle_x = self.rect.x + fill_w
+        pygame.draw.circle(surf, C_WHITE, (handle_x, self.rect.centery), 10)
+        pygame.draw.circle(surf, C_GOLD, (handle_x, self.rect.centery), 6)
+        
+        f = get_font(18)
+        txt = f.render(f"{self.label}: {int(self.value * 100)}%", True, C_TEXT)
+        surf.blit(txt, txt.get_rect(midleft=(self.rect.x, self.rect.y - 25)))
+
+class ParticleSystem:
+    def __init__(self, w, h, count=80):
+        self.w, self.h = w, h
+        self.particles = [{"x": random.random()*w, "y": random.random()*h, 
+                           "r": random.random()*3, "vx": random.uniform(-0.4, 0.4), 
+                           "vy": random.uniform(-0.6, -0.2), "alpha": random.randint(30, 120),
+                           "col": random.choice([C_PLAYER, C_AI, C_GOLD])} for _ in range(count)]
+
+    def update(self):
+        for p in self.particles:
+            p["x"] += p["vx"]; p["y"] += p["vy"]
+            if p["y"] < -10: p["y"] = self.h + 10; p["x"] = random.random()*self.w
+
+    def draw(self, surf):
+        for p in self.particles:
+            s = pygame.Surface((int(p["r"]*4), int(p["r"]*4)), pygame.SRCALPHA)
+            pygame.draw.circle(s, (*p["col"], p["alpha"]), (int(p["r"]*2), int(p["r"]*2)), int(p["r"]))
+            surf.blit(s, (int(p["x"]), int(p["y"])))
 
 # ═══════════════════════════════════════════════════════════
-# Fonts helper
+# Drawing Helpers
 # ═══════════════════════════════════════════════════════════
-_font_cache = {}
 
-def get_font(size, bold=False):
-    key = (size, bold)
-    if key not in _font_cache:
-        # Try a few fonts that are likely to have better emoji support on Windows
-        fonts_to_try = ["Segoe UI Emoji", "Segoe UI Symbol", "Arial", "Consolas"]
-        for f_name in fonts_to_try:
-            try:
-                _font_cache[key] = pygame.font.SysFont(f_name, size, bold=bold)
-                # Test if font actually works by rendering a simple char
-                _font_cache[key].render("A", True, (0,0,0))
-                break
-            except Exception:
-                continue
-        else:
-            _font_cache[key] = pygame.font.Font(None, size)
-    return _font_cache[key]
-
-
-# ═══════════════════════════════════════════════════════════
-# Drawing helpers
-# ═══════════════════════════════════════════════════════════
 def draw_gradient_bg(surf):
     w, h = surf.get_size()
-    # Radial-ish gradient or complex linear
     for y in range(h):
         t = y / h
         r = int(C_BG_TOP[0] + (C_BG_BOT[0]-C_BG_TOP[0])*t)
         g = int(C_BG_TOP[1] + (C_BG_BOT[1]-C_BG_TOP[1])*t)
         b = int(C_BG_TOP[2] + (C_BG_BOT[2]-C_BG_TOP[2])*t)
         pygame.draw.line(surf, (r,g,b), (0,y), (w,y))
-    
-    # Add subtle circular grid pattern
-    cx, cy = w//2, h//2 - 20
-    for r in range(100, 800, 120):
-        pygame.draw.circle(surf, (255, 255, 255, 10), (cx, cy), r, width=1)
-    
-    # Random stars/dots
-    random.seed(42) # Deterministic stars
-    for _ in range(100):
-        sx = random.randint(0, w)
-        sy = random.randint(0, h)
-        sc = random.randint(30, 100)
-        pygame.draw.circle(surf, (sc, sc, sc+50, 40), (sx, sy), 1)
 
+def draw_card(surf, cx, cy, w, h, alpha=240, title=""):
+    s = pygame.Surface((w, h), pygame.SRCALPHA)
+    pygame.draw.rect(s, (20, 30, 60, alpha), s.get_rect(), border_radius=32)
+    pygame.draw.rect(s, (100, 120, 180, 180), s.get_rect(), width=3, border_radius=32)
+    surf.blit(s, (cx-w//2, cy-h//2))
+    if title:
+        f = get_font(36, bold=True)
+        draw_text_glow(surf, title, f, C_GOLD, cx, cy - h//2 + 50)
 
-def draw_glow_circle(surf, cx, cy, r, color, alpha=120):
-    for dr in range(18, 0, -3):
-        s = pygame.Surface((r*2+dr*4, r*2+dr*4), pygame.SRCALPHA)
-        a = int(alpha * (1 - dr/20))
-        pygame.draw.circle(s, (*color, a), (r+dr*2, r+dr*2), r+dr)
-        surf.blit(s, (int(cx-r-dr*2), int(cy-r-dr*2)))
-
-
-def draw_pawn(surf, cx, cy, r, color, is_matched=False):
-    """Draws a procedurally generated chess pawn shape with shading."""
-    # Main color with slight gradient feel
-    c_dark = [max(0, c - 40) for c in color]
-    c_light = [min(255, c + 60) for c in color]
-    
-    # Base
-    base_w = r * 1.5
-    base_h = r * 0.45
-    pygame.draw.ellipse(surf, c_dark, (cx - base_w//2 + 2, cy + r*0.4 + 2, base_w, base_h))
-    pygame.draw.ellipse(surf, color, (cx - base_w//2, cy + r*0.4, base_w, base_h))
-    
-    # Body
-    body_points = [
-        (cx - r*0.6, cy + r*0.6),
-        (cx + r*0.6, cy + r*0.6),
-        (cx + r*0.25, cy - r*0.3),
-        (cx - r*0.25, cy - r*0.3),
-    ]
-    pygame.draw.polygon(surf, color, body_points)
-    # Body Highlight
-    pygame.draw.line(surf, c_light, (cx - r*0.2, cy + r*0.4), (cx - r*0.1, cy - r*0.2), width=3)
-    
-    # Neck
-    pygame.draw.ellipse(surf, color, (cx - r*0.45, cy - r*0.4, r*0.9, r*0.25))
-    
-    # Head
-    pygame.draw.circle(surf, color, (cx, cy - r*0.65), int(r*0.55))
-    
-    # Head Highlight
-    if not is_matched:
-        pygame.draw.circle(surf, (255,255,255,80), (int(cx - r*0.2), int(cy - r*0.8)), int(r*0.18))
-
-def draw_tile(surf, tile, player_col=C_PLAYER):
-    cx = int(tile.cx)
-    cy = int(tile.cy)
-    ar = int(tile.anim_radius)
-    if ar <= 0:
-        return
-
-    if tile.is_matched:
-        # Gold glow pulse (Circular as requested)
-        ga = int(100 + 100 * tile.glow_alpha)
-        draw_glow_circle(surf, cx, cy, ar, C_GOLD, alpha=ga)
-        draw_pawn(surf, cx, cy, ar, tile.color, is_matched=True)
-        # Crown outline
-        pygame.draw.circle(surf, C_GOLD, (cx, cy - ar*0.65), int(ar*0.6), width=3)
-    elif tile.is_revealed:
-        # Circular glow
-        draw_glow_circle(surf, cx, cy, ar, tile.color, alpha=90)
-        draw_pawn(surf, cx, cy, ar, tile.color)
-    else:
-        # Hidden tile
-        draw_pawn(surf, cx, cy, ar, C_TILE_DARK)
-        pygame.draw.circle(surf, C_TILE_EDGE, (cx, cy - ar*0.65), int(ar*0.55), width=2)
-
-
-def draw_text_glow(surf, text, font, color, cx, cy, glow_color=None, glow_r=3):
-    if glow_color:
-        for dx in range(-glow_r, glow_r+1, glow_r):
-            for dy in range(-glow_r, glow_r+1, glow_r):
-                if dx==0 and dy==0:
-                    continue
-                t2 = font.render(text, True, glow_color)
-                surf.blit(t2, t2.get_rect(center=(cx+dx, cy+dy)))
+def draw_text_glow(surf, text, font, color, cx, cy, glow_color=None, glow_r=2):
+    """Draws a sharp shadow/glow effect for better legibility."""
+    if glow_color is None: glow_color = (0, 0, 0)
+    if glow_r > 0:
+        t2 = font.render(text, True, (*glow_color, 150))
+        surf.blit(t2, t2.get_rect(center=(cx + glow_r, cy + glow_r)))
     t = font.render(text, True, color)
     surf.blit(t, t.get_rect(center=(cx, cy)))
 
+def draw_pawn(surf, cx, cy, r, color, is_matched=False):
+    c_dark = [max(0, c - 50) for c in color]
+    c_light = [min(255, c + 70) for c in color]
+    # Base
+    pygame.draw.ellipse(surf, c_dark, (cx - r*0.8, cy + r*0.4, r*1.6, r*0.5))
+    pygame.draw.ellipse(surf, color, (cx - r*0.7, cy + r*0.35, r*1.4, r*0.45))
+    # Body
+    pts = [(cx-r*0.5, cy+r*0.5), (cx+r*0.5, cy+r*0.5), (cx+r*0.2, cy-r*0.3), (cx-r*0.2, cy-r*0.3)]
+    pygame.draw.polygon(surf, color, pts)
+    # Head
+    pygame.draw.circle(surf, color, (int(cx), int(cy - r*0.6)), int(r*0.5))
+    if not is_matched:
+        pygame.draw.circle(surf, (255,255,255,100), (int(cx-r*0.2), int(cy-r*0.7)), int(r*0.15))
 
-def draw_card(surf, cx, cy, w, h, alpha=200):
-    s = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(s, (20, 28, 52, alpha), s.get_rect(), border_radius=24)
-    pygame.draw.rect(s, (60, 80, 140, 120), s.get_rect(), width=2, border_radius=24)
-    surf.blit(s, (cx-w//2, cy-h//2))
+def draw_tile(surf, tile):
+    cx, cy, ar = int(tile.cx), int(tile.cy), int(tile.anim_radius)
+    if ar <= 0: return
+    if tile.is_matched:
+        draw_glow(surf, cx, cy, ar, C_GOLD, alpha=int(120 + 80*tile.glow_alpha))
+        draw_pawn(surf, cx, cy, ar, tile.color, is_matched=True)
+    elif tile.is_revealed:
+        draw_glow(surf, cx, cy, ar, tile.color, alpha=100)
+        draw_pawn(surf, cx, cy, ar, tile.color)
+    else:
+        draw_pawn(surf, cx, cy, ar, C_TILE_DARK)
+        pygame.draw.circle(surf, C_TILE_EDGE, (cx, int(cy - ar*0.6)), int(ar*0.4), width=2)
 
+def draw_glow(surf, cx, cy, r, color, alpha=100):
+    for i in range(3):
+        rad = r + (i+1)*8
+        s = pygame.Surface((rad*2, rad*2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*color, alpha // (i+1)), (rad, rad), rad)
+        surf.blit(s, (cx-rad, cy-rad))
 
 # ═══════════════════════════════════════════════════════════
-# Screen renderers
+# Screen Renderers
 # ═══════════════════════════════════════════════════════════
+
+def draw_name_input(surf, buttons, name_text):
+    w, h = surf.get_size()
+    draw_card(surf, w//2, h//2, w-60, 400, title="WELCOME! 👋")
+    f = get_font(24)
+    draw_text_glow(surf, "Enter Your Name:", f, C_TEXT, w//2, h//2 - 60)
+    
+    # Input Box
+    box = pygame.Rect(w//2 - 200, h//2, 400, 60)
+    pygame.draw.rect(surf, C_BLACK, box, border_radius=15)
+    pygame.draw.rect(surf, C_PLAYER, box, width=2, border_radius=15)
+    
+    txt = f.render(name_text + "|", True, C_WHITE)
+    surf.blit(txt, txt.get_rect(center=box.center))
+    
+    for b in buttons: b.draw(surf)
+
 def draw_menu(surf, buttons, title_t):
     w, h = surf.get_size()
-    # Animated background effects for menu
-    cx, cy = w//2, h//3
+    cx, cy = w//2, h//6
+    # Title
+    f_big = get_font(64, bold=True)
+    draw_text_glow(surf, "COLOR MEMORY", f_big, C_WHITE, cx, cy, glow_color=C_PLAYER, glow_r=4)
+    draw_text_glow(surf, "CHESS 🏆", f_big, C_GOLD, cx, cy + 70, glow_color=C_ACCENT, glow_r=4)
     
-    # Floating particles specific to title
-    for i in range(12):
-        ang = title_t * 0.5 + i * (math.pi*2/12)
-        px = cx + 220 * math.cos(ang)
-        py = cy + 60 * math.sin(ang * 2)
-        pygame.draw.circle(surf, (100, 150, 255, 40), (int(px), int(py)), 8)
+    # Decorative
+    draw_glow(surf, w//2, h//2 - 120, 70, C_GOLD, alpha=30)
+    draw_pawn(surf, w//2, h//2 - 120, 60, C_GOLD)
 
-    # Animated title glow pulse
-    pulse = 0.8 + 0.2*math.sin(title_t*2.5)
-    f_big  = get_font(62, bold=True)
-    
-    # Shadow layer
-    draw_text_glow(surf, "👑  COLOR MEMORY", f_big, (10, 10, 30), w//2+4, cy-14, glow_r=0)
-    
-    # Main layers
-    draw_glow_circle(surf, w//2, cy, int(100*pulse), C_PLAYER, alpha=int(100*pulse))
-    draw_text_glow(surf, "👑  COLOR MEMORY", f_big, C_WHITE, w//2, cy-18,
-                   glow_color=C_PLAYER, glow_r=6)
-    draw_text_glow(surf, "♟️  CHESS", f_big, C_GOLD, w//2, cy+48,
-                   glow_color=C_ACCENT, glow_r=6)
-    
-    t = get_font(18).render("A Masterful Strategy Memory Duel", True, C_DIM)
-    surf.blit(t, t.get_rect(center=(w//2, cy+110)))
-    for btn in buttons:
-        btn.draw(surf)
+    for btn in buttons: btn.draw(surf)
 
+def draw_player_card(surf, cx, cy, w, name, score, color, is_ai=False):
+    h = 110
+    s = pygame.Surface((w, h), pygame.SRCALPHA)
+    pygame.draw.rect(s, (25, 35, 65, 240), s.get_rect(), border_radius=24)
+    pygame.draw.rect(s, (*color, 150), s.get_rect(), width=3, border_radius=24)
+    
+    # Avatar Circle
+    pygame.draw.circle(s, (*color, 60), (55, h//2), 40)
+    pygame.draw.circle(s, color, (55, h//2), 40, width=2)
+    icon = "🤖" if is_ai else "👤"
+    f_icon = get_font(38)
+    it = f_icon.render(icon, True, C_WHITE)
+    s.blit(it, it.get_rect(center=(55, h//2)))
+
+    # Name & Rank
+    f_name = get_font(28, bold=True)
+    nt = f_name.render(f"{name} {'🤖' if is_ai else '⭐'}", True, C_WHITE)
+    s.blit(nt, (110, 25))
+    
+    f_rank = get_font(16)
+    rt = f_rank.render("Grandmaster" if not is_ai else "Super Computer", True, C_DIM)
+    s.blit(rt, (110, 62))
+
+    # Score
+    f_score = get_font(48, bold=True)
+    st = f_score.render(str(score), True, color)
+    s.blit(st, st.get_rect(midright=(w - 30, h//2)))
+
+    surf.blit(s, (cx - w//2, cy - h//2))
+
+def draw_game_screen(surf, game, buttons):
+    w, h = surf.get_size()
+    
+    # Active Turn highlighting
+    p_active = "PLAYER" in game.turn_label
+    ai_active = "AI" in game.turn_label
+    
+    # Top Player Card
+    draw_player_card(surf, w//2, 110, w - 50, game.player_name, game.player_score, C_PLAYER if p_active else C_DIM)
+    
+    # Turn Indicator Badge (Side)
+    tl = game.turn_label
+    tc = C_PLAYER if p_active else (C_AI if ai_active else C_GOLD)
+    f_turn = get_font(22, bold=True)
+    
+    # Small Vertical Badge at the right
+    badge_w, badge_h = 40, 180
+    badge_rect = pygame.Rect(w - 45, h//2 - badge_h//2, badge_w, badge_h)
+    pygame.draw.rect(surf, (20, 30, 60, 200), badge_rect, border_radius=10)
+    pygame.draw.rect(surf, tc, badge_rect, width=2, border_radius=10)
+    
+    # Draw vertical text
+    for i, char in enumerate(tl.replace(" TURN", "")):
+        ct = f_turn.render(char, True, tc)
+        surf.blit(ct, ct.get_rect(center=(badge_rect.centerx, badge_rect.y + 30 + i*25)))
+
+    # Board Decorations
+    bcx, bcy = w//2, h//2 + 30
+    for r in [w*0.22, w*0.38, w*0.52]:
+        pygame.draw.circle(surf, (100, 120, 200, 30), (bcx, bcy), int(r), width=3)
+    
+    for tile in game.tiles: draw_tile(surf, tile)
+
+    # Bottom AI Card
+    draw_player_card(surf, w//2, h - 150, w - 50, "AI Master", game.ai_score, C_AI if ai_active else C_DIM, is_ai=True)
+
+    # Stats
+    f_stats = get_font(16)
+    st_txt = f_stats.render(f"Moves: {game.total_moves} ⏱️ Time: {game.total_time}s", True, C_DIM)
+    surf.blit(st_txt, st_txt.get_rect(center=(w//2, h - 70)))
+
+    for btn in buttons: btn.draw(surf)
+
+def draw_pause_menu(surf, buttons, sliders):
+    w, h = surf.get_size()
+    draw_card(surf, w//2, h//2, w-70, 600, title="PAUSED ⏸️")
+    for s in sliders: s.draw(surf)
+    for b in buttons: b.draw(surf)
+
+def draw_save_game(surf, buttons, input_text):
+    w, h = surf.get_size()
+    draw_card(surf, w//2, h//2, w-70, 520, title="SAVE GAME 💾")
+    f = get_font(24)
+    box = pygame.Rect(w//2 - 160, h//2 - 60, 320, 55)
+    pygame.draw.rect(surf, C_BLACK, box, border_radius=12)
+    pygame.draw.rect(surf, C_TILE_EDGE, box, width=2, border_radius=12)
+    txt = f.render(input_text + "|", True, C_WHITE)
+    surf.blit(txt, txt.get_rect(center=box.center))
+    for b in buttons: b.draw(surf)
+
+def draw_saved_games(surf, buttons, saves):
+    w, h = surf.get_size()
+    draw_card(surf, w//2, h//2, w-50, 620, title="SAVED GAMES 💾")
+    if not saves:
+        f = get_font(22)
+        t = f.render("No saves found. 📭", True, C_DIM)
+        surf.blit(t, t.get_rect(center=(w//2, h//2)))
+    for b in buttons: b.draw(surf)
+
+def draw_game_history(surf, buttons, history):
+    w, h = surf.get_size()
+    draw_card(surf, w//2, h//2, w-40, 680, title="HISTORY 📜")
+    if not history:
+        f = get_font(22)
+        t = f.render("No battles yet! ⚔️", True, C_DIM)
+        surf.blit(t, t.get_rect(center=(w//2, h//2)))
+    else:
+        f = get_font(16)
+        for i, entry in enumerate(history[-12:]):
+            y = h//2 - 240 + i * 40
+            # Format date
+            date_str = str(entry['date'])[:16] # YYYY-MM-DD HH:MM
+            # Format score
+            if isinstance(entry['score'], dict):
+                score_str = f"{entry['score'].get('player', 0)}-{entry['score'].get('ai', 0)}"
+            else: score_str = str(entry['score'])
+            
+            winner = entry['winner'].upper()
+            txt = f"📅 {date_str} - {winner} WON ({score_str})"
+            col = C_PLAYER if entry['winner'] == 'player' else C_AI
+            st = f.render(txt, True, col)
+            surf.blit(st, st.get_rect(center=(w//2, y)))
+    for b in buttons: b.draw(surf)
+
+def draw_settings(surf, buttons, sliders, difficulty):
+    w, h = surf.get_size()
+    draw_card(surf, w//2, h//2, w-70, 580, title="SETTINGS ⚙️")
+    for s in sliders: s.draw(surf)
+    f = get_font(22)
+    surf.blit(f.render(f"Difficulty: {difficulty.upper()} 🧠", True, C_GOLD), (w//2 - 160, h//2 + 60))
+    for b in buttons: b.draw(surf)
 
 def draw_rules(surf, back_btn):
     w, h = surf.get_size()
-    draw_card(surf, w//2, h//2, 540, 380)
-    f  = get_font(30, bold=True)
-    fs = get_font(18)
-    draw_text_glow(surf,"📜  HOW TO PLAY  📜", f, C_GOLD, w//2, h//2-145)
+    draw_card(surf, w//2, h//2, w-50, 580, title="RULES 📖")
     rules = [
-        "🔵  Click any 2 hidden tiles to reveal them.",
-        "✅  Matching colors score a point — tiles stay revealed.",
-        "❌  Non-matching tiles flip back after a short delay.",
-        "🤖  The AI memorises every tile it has seen.",
-        "🏆  Most matched pairs when board clears wins!",
-        "🔄  Player and AI alternate turns.",
+        "1. Select 2 hidden pieces. ♟️",
+        "2. Match colors to score! ✨",
+        "3. AI remembers everything! 🧠",
+        "4. Most matches win! 🏆",
+        "5. Alternate turns. 🔄"
     ]
-    for i, line in enumerate(rules):
-        t = fs.render(line, True, C_TEXT)
-        surf.blit(t, t.get_rect(midleft=(w//2-230, h//2-95+i*38)))
+    f = get_font(22)
+    for i, r in enumerate(rules):
+        rt = f.render(r, True, C_TEXT)
+        surf.blit(rt, (w//2 - 170, h//2 - 140 + i*60))
     back_btn.draw(surf)
 
-
-def draw_settings(surf, toggle_btn, back_btn, ai_smart):
+def draw_gameover(surf, game, buttons):
     w, h = surf.get_size()
-    draw_card(surf, w//2, h//2, 440, 280)
-    f  = get_font(30, bold=True)
-    fs = get_font(18)
-    draw_text_glow(surf, "⚙️  GAME PREFERENCES", f, C_GOLD, w//2, h//2-95)
-    label = "AI Mode:  SMART" if ai_smart else "AI Mode:  RANDOM"
-    col   = C_PLAYER if ai_smart else C_AI
-    t = fs.render(label, True, col)
-    surf.blit(t, t.get_rect(center=(w//2, h//2-20)))
-    toggle_btn.draw(surf)
-    back_btn.draw(surf)
+    draw_card(surf, w//2, h//2, w-60, 580, title="GAME OVER 🏁")
+    f_res = get_font(48, bold=True)
+    if game.winner == "player": draw_text_glow(surf, "VICTORY! 🎉", f_res, C_PLAYER, w//2, h//2 - 140)
+    elif game.winner == "ai": draw_text_glow(surf, "AI WON! 💀", f_res, C_AI, w//2, h//2 - 140)
+    else: draw_text_glow(surf, "STALEMATE 🤝", f_res, C_GOLD, w//2, h//2 - 140)
+    f_stats = get_font(22)
+    stats = [
+        f"Matches: {game.correct_matches} ✨",
+        f"Final Score: {game.player_score} - {game.ai_score} 🏆"
+    ]
+    for i, s in enumerate(stats):
+        st = f_stats.render(s, True, C_TEXT)
+        surf.blit(st, st.get_rect(center=(w//2, h//2 - 30 + i*45)))
+    for b in buttons: b.draw(surf)
 
-
-def draw_gameover(surf, game, play_btn, menu_btn):
+def draw_confirm_exit(surf, buttons):
     w, h = surf.get_size()
-    draw_card(surf, w//2, h//2, 460, 320)
-    f_big = get_font(38, bold=True)
-    f_med = get_font(22)
-    f_sm  = get_font(18)
-
-    if game.winner == "player":
-        wtext = "🏆  VICTORY!  🎉"
-        wcol  = C_PLAYER
-    elif game.winner == "ai":
-        wtext = "🤖  AI TRIUMPHED!  💀"
-        wcol  = C_AI
-    else:
-        wtext = "🤝  STALEMATE!  ⚖️"
-        wcol  = C_GOLD
-
-    draw_text_glow(surf, wtext, f_big, wcol, w//2, h//2-110, glow_color=wcol, glow_r=3)
-
-    sc = f_med.render(f"Player  {game.player_score}  —  {game.ai_score}  AI", True, C_TEXT)
-    surf.blit(sc, sc.get_rect(center=(w//2, h//2-55)))
-
-    play_btn.draw(surf)
-    menu_btn.draw(surf)
-
-
-def draw_game_screen(surf, game, restart_btn, menu_btn):
-    w, h = surf.get_size()
-
-    # ── Top bar ─────────────────────────────────────────
-    bar = pygame.Surface((w, 64), pygame.SRCALPHA)
-    bar.fill((15, 20, 40, 200))
-    surf.blit(bar, (0, 0))
-
-    f_score = get_font(26, bold=True)
-    f_turn  = get_font(20, bold=True)
-    f_label = get_font(13)
-
-    # Player score
-    pl = f_score.render(str(game.player_score), True, C_PLAYER)
-    surf.blit(pl, pl.get_rect(centerx=w//4, centery=28))
-    pl2 = f_label.render("PLAYER", True, C_DIM)
-    surf.blit(pl2, pl2.get_rect(centerx=w//4, centery=48))
-
-    # Turn label
-    tl = game.turn_label
-    tc = C_PLAYER if "PLAYER" in tl else (C_AI if "AI" in tl else C_GOLD)
-    t = f_turn.render(tl, True, tc)
-    surf.blit(t, t.get_rect(center=(w//2, 32)))
-
-    # AI score
-    ai_s = f_score.render(str(game.ai_score), True, C_AI)
-    surf.blit(ai_s, ai_s.get_rect(centerx=3*w//4, centery=28))
-    ai2 = f_label.render("AI", True, C_DIM)
-    surf.blit(ai2, ai2.get_rect(centerx=3*w//4, centery=48))
-
-    # ── Circular board decorations ──────────────────────
-    ring_cx = w//2
-    ring_cy = h//2 - 20
-    r1 = int(min(w, h)*0.22)
-    r2 = int(min(w, h)*0.38)
-    s_board = pygame.Surface((w, h), pygame.SRCALPHA)
-    
-    # Outer Glow Ring
-    pygame.draw.circle(s_board, (100, 150, 255, 15), (ring_cx, ring_cy), r2 + 60, width=40)
-    
-    # Tracks for pawns
-    # Track 1
-    pygame.draw.circle(s_board, (255, 255, 255, 20), (ring_cx, ring_cy), r1, width=2)
-    pygame.draw.circle(s_board, (80, 100, 200, 10), (ring_cx, ring_cy), r1, width=12)
-    # Track 2
-    pygame.draw.circle(s_board, (255, 255, 255, 20), (ring_cx, ring_cy), r2, width=2)
-    pygame.draw.circle(s_board, (80, 100, 200, 10), (ring_cx, ring_cy), r2, width=12)
-    
-    # Connecting Lines (spider-web look)
-    for i in range(12):
-        ang = math.radians(-90 + i * (360/12))
-        p1 = (ring_cx + r1*math.cos(ang), ring_cy + r1*math.sin(ang))
-        p2 = (ring_cx + r2*math.cos(ang + math.radians(15)), ring_cy + r2*math.sin(ang + math.radians(15)))
-        pygame.draw.line(s_board, (100, 150, 255, 15), p1, p2, width=1)
-
-    surf.blit(s_board, (0, 0))
-
-    # ── Tiles ────────────────────────────────────────────
-    for tile in game.tiles:
-        draw_tile(surf, tile)
-
-    # ── Bottom buttons ───────────────────────────────────
-    restart_btn.draw(surf)
-    menu_btn.draw(surf)
+    draw_card(surf, w//2, h//2, w-90, 340, title="EXIT? 🚪")
+    f = get_font(22)
+    t = f.render("Finished for now? 👋", True, C_TEXT)
+    surf.blit(t, t.get_rect(center=(w//2, h//2 - 10)))
+    for b in buttons: b.draw(surf)

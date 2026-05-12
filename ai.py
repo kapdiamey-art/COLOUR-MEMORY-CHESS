@@ -1,67 +1,73 @@
-"""
-ai.py - AI Memory Logic for Color Memory Chess
-The AI stores memory of revealed tiles and plays smartly.
-"""
-
 import random
 
+DIFFICULTY_EASY   = "easy"
+DIFFICULTY_MEDIUM = "medium"
+DIFFICULTY_HARD   = "hard"
 
 class AIPlayer:
-    def __init__(self):
-        # memory[tile_index] = color (once AI has seen it)
+    def __init__(self, difficulty=DIFFICULTY_MEDIUM):
+        self.difficulty = difficulty
+        # memory[tile_index] = color
         self.memory = {}
 
     def observe(self, tile_index: int, color):
         """Record a tile the AI has seen."""
+        # Easy AI might fail to observe
+        if self.difficulty == DIFFICULTY_EASY:
+            if random.random() < 0.3: # 30% chance to miss
+                return
         self.memory[tile_index] = color
 
     def forget_tile(self, tile_index: int):
-        """Optionally remove a tile from memory (e.g. after it's matched)."""
         self.memory.pop(tile_index, None)
 
     def choose_moves(self, available_indices: list) -> tuple:
         """
-        Choose 2 tile indices to flip.
-        Strategy:
-          1. If AI knows a matching pair in available tiles → pick it.
-          2. If AI knows one tile of a pair → pick that + a random unseen tile.
-          3. Otherwise → pick 2 random unseen tiles (prefer unseen over seen).
-        Returns (first_index, second_index)
+        Choose 2 tile indices to flip based on difficulty.
         """
         available_set = set(available_indices)
-
-        # Build known tiles that are still available
         known_available = {idx: col for idx, col in self.memory.items()
                            if idx in available_set}
 
-        # 1. Check for a known matching pair
+        # 1. Look for known matching pairs
         color_to_indices = {}
         for idx, col in known_available.items():
             color_to_indices.setdefault(col, []).append(idx)
 
-        for col, indices in color_to_indices.items():
-            if len(indices) >= 2:
-                # Found a guaranteed match
-                chosen = indices[:2]
-                return (chosen[0], chosen[1])
+        matches = [indices[:2] for col, indices in color_to_indices.items() if len(indices) >= 2]
 
-        # 2. Know at least one tile — pick it + random unseen
+        # Difficulty Logic
+        if self.difficulty == DIFFICULTY_EASY:
+            # 50% chance to ignore known matches and play randomly
+            if matches and random.random() > 0.5:
+                pair = matches[0]
+                return (pair[0], pair[1])
+        elif self.difficulty == DIFFICULTY_MEDIUM:
+            # 85% chance to take the match if known
+            if matches and random.random() < 0.85:
+                pair = matches[0]
+                return (pair[0], pair[1])
+        else: # HARD
+            if matches:
+                pair = matches[0]
+                return (pair[0], pair[1])
+
+        # 2. Pick one known + one random unseen (or both random)
         unseen = [i for i in available_indices if i not in self.memory]
-
-        if known_available and unseen:
-            first = random.choice(list(known_available.keys()))
-            second = random.choice(unseen)
-            return (first, second)
-
-        # 3. Both random (prefer unseen tiles)
+        
+        if self.difficulty == DIFFICULTY_HARD:
+            # Hard AI prioritizes picking a tile it knows to see if it can find its match
+            if known_available and unseen:
+                return (list(known_available.keys())[0], random.choice(unseen))
+        
+        # Default: pick 2 random (preferring unseen if possible)
         if len(unseen) >= 2:
             chosen = random.sample(unseen, 2)
             return (chosen[0], chosen[1])
-
-        # Fallback — just pick any 2 available
-        chosen = random.sample(list(available_indices), 2)
+        
+        # Final fallback
+        chosen = random.sample(available_indices, 2)
         return (chosen[0], chosen[1])
 
     def reset(self):
-        """Reset memory for a new game."""
         self.memory = {}

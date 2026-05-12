@@ -1,10 +1,8 @@
-"""
-game.py - Core Game Logic and Turn System for Color Memory Chess
-"""
-
 import random
 import math
-from ai import AIPlayer
+import time
+from ai_engine import AIEngine
+from game_state import GameState
 
 # === TILE COLORS (12 pairs = 24 tiles) ===
 TILE_COLORS = [
@@ -27,7 +25,6 @@ STATE_AI_TURN      = "ai"
 STATE_FLIP_BACK    = "flip_back"
 STATE_AI_THINKING  = "ai_thinking"
 STATE_GAME_OVER    = "game_over"
-
 
 class Tile:
     PHASE_IDLE   = "idle"
@@ -54,30 +51,25 @@ class Tile:
         self.reveal_target = reveal
 
     def update(self, dt: float):
+        self.glow_timer += dt * 3
         if self.anim_phase == self.PHASE_SHRINK:
             self.anim_radius -= self.FLIP_SPEED
             if self.anim_radius <= 0:
                 self.anim_radius = 0
                 self.is_revealed = self.reveal_target
                 self.anim_phase  = self.PHASE_EXPAND
-
         elif self.anim_phase == self.PHASE_EXPAND:
             self.anim_radius += self.FLIP_SPEED
             if self.anim_radius >= self.base_radius:
                 self.anim_radius = self.base_radius
-                self.anim_phase  = self.PHASE_IDLE
+                self.anim_phase = self.PHASE_IDLE
 
-        if self.is_matched:
-            self.glow_timer = (self.glow_timer + dt * 2.5) % (2 * math.pi)
-
-    @property
     def is_animating(self):
         return self.anim_phase != self.PHASE_IDLE
 
     @property
     def glow_alpha(self):
         return 0.55 + 0.45 * math.sin(self.glow_timer)
-
 
 class Game:
     FLIP_BACK_DELAY = 1.2
@@ -87,204 +79,145 @@ class Game:
     def __init__(self, screen_w, screen_h):
         self.screen_w = screen_w
         self.screen_h = screen_h
-        self.ai       = AIPlayer()
+        self.ai_engine = AIEngine("ALPHA-BETA")
+        self.ai_memory = {}
+        self.player_name = "Player"
         self.reset()
 
     def reset(self):
-        self.ai.reset()
+        self.ai_memory = {}
         colors = TILE_COLORS * 2
         random.shuffle(colors)
+        cx, cy = self.screen_w / 2, self.screen_h / 2 + 30
+        ring_radii = [min(W, H)*0.15, min(W, H)*0.28, min(W, H)*0.41] if 'W' in globals() else [80, 150, 220]
+        ring_counts = [4, 8, 12]
+        self.tiles = []
+        c_idx = 0
+        for r_idx, radius in enumerate(ring_radii):
+            for i in range(ring_counts[r_idx]):
+                angle = (2 * math.pi * i) / ring_counts[r_idx]
+                self.tiles.append(Tile(len(self.tiles), colors[c_idx], cx + radius*math.cos(angle), cy + radius*math.sin(angle)))
+                c_idx += 1
+        self.player_score = 0
+        self.ai_score = 0
+        self.state = STATE_PLAYER_TURN
+        self.selected = []
+        self.flip_timer = 0
+        self.player_was_last = False
+        self.winner = None
+        self.total_moves = 0
+        self.correct_matches = 0
+        self.start_time = time.time()
+        self.total_time = 0
+        self.sound_trigger = None
+        self.ai_flip_stage = 0
 
-        cx     = self.screen_w / 2
-        cy     = self.screen_h / 2 - 20
-        ring_r1 = min(self.screen_w, self.screen_h) * 0.22
-        ring_r2 = min(self.screen_w, self.screen_h) * 0.38
-        n_per_ring = 12
-
-        self.tiles: list[Tile] = []
-        # Inner Ring
-        for i in range(n_per_ring):
-            angle = math.radians(-90 + i * (360 / n_per_ring))
-            tx = cx + ring_r1 * math.cos(angle)
-            ty = cy + ring_r1 * math.sin(angle)
-            self.tiles.append(Tile(len(self.tiles), colors[len(self.tiles)], tx, ty, radius=34))
-        
-        # Outer Ring
-        for i in range(n_per_ring):
-            angle = math.radians(-90 + (i + 0.5) * (360 / n_per_ring)) # Offset outer ring
-            tx = cx + ring_r2 * math.cos(angle)
-            ty = cy + ring_r2 * math.sin(angle)
-            self.tiles.append(Tile(len(self.tiles), colors[len(self.tiles)], tx, ty, radius=34))
-
-        self.player_score    = 0
-        self.ai_score        = 0
-        self.state           = STATE_PLAYER_TURN
-        self.selected        = []          # face-up unmatched this turn
-        self.flip_timer      = 0.0
-        self.ai_timer        = 0.0
-        self.ai_pending      = []
-        self.ai_flip_stage   = 0
-        self.player_was_last = True        # whose turn just ended (for flip-back routing)
-        self.winner          = None
-
-    # ── Public update ─────────────────────────────────────
     def update(self, dt: float):
-        for tile in self.tiles:
-            tile.update(dt)
-
-        if self.state == STATE_FLIP_BACK:
+        if self.state == STATE_GAME_OVER: return
+        for t in self.tiles: t.update(dt)
+        if self.state in (STATE_AI_THINKING, STATE_AI_TURN): self._update_ai(dt)
+        elif self.state == STATE_FLIP_BACK:
             self.flip_timer -= dt
             if self.flip_timer <= 0:
                 self._do_flip_back()
+                self.sound_trigger = "move"
+        if all(t.is_matched for t in self.tiles) and self.state != STATE_GAME_OVER: self._end_game()
 
-        elif self.state == STATE_AI_THINKING:
-            self._update_ai(dt)
-
-    # ── Player click ──────────────────────────────────────
     def handle_click(self, mx, my):
-        if self.state != STATE_PLAYER_TURN:
-            return
-        if any(t.is_animating for t in self.tiles):
-            return
-
+        if self.state != STATE_PLAYER_TURN or any(t.is_animating() for t in self.tiles): return False
         idx = self._tile_at(mx, my)
-        if idx is None or self.tiles[idx].is_matched or self.tiles[idx].is_revealed:
-            return
-        if idx in self.selected:
-            return
-
-        tile = self.tiles[idx]
-        tile.is_revealed = True
-        tile.start_flip(reveal=True)
-        self.ai.observe(idx, tile.color)
+        if idx is None or self.tiles[idx].is_matched or self.tiles[idx].is_revealed or idx in self.selected: return False
+        t = self.tiles[idx]
+        t.is_revealed = True; t.start_flip(reveal=True)
+        self.ai_memory[idx] = t.color
         self.selected.append(idx)
-
+        self.sound_trigger = "move"
         if len(self.selected) == 2:
-            self.player_was_last = True
+            self.total_moves += 1; self.player_was_last = True
             self._evaluate_pair(is_player=True)
+        return True
 
-    # ── Helpers ───────────────────────────────────────────
     def _tile_at(self, mx, my):
-        for tile in self.tiles:
-            if not tile.is_matched and not tile.is_revealed:
-                if math.hypot(mx - tile.cx, my - tile.cy) <= tile.base_radius:
-                    return tile.index
+        for t in self.tiles:
+            if not t.is_matched and not t.is_revealed:
+                if math.hypot(mx - t.cx, my - t.cy) <= t.base_radius: return t.index
         return None
 
     def _evaluate_pair(self, is_player: bool):
-        idx0, idx1 = self.selected[0], self.selected[1]
-        t0, t1     = self.tiles[idx0], self.tiles[idx1]
-
+        t0, t1 = self.tiles[self.selected[0]], self.tiles[self.selected[1]]
         if t0.color == t1.color:
-            # Match!
-            t0.is_matched = True
-            t1.is_matched = True
-            self.ai.forget_tile(idx0)
-            self.ai.forget_tile(idx1)
-
-            if is_player:
-                self.player_score += 1
-            else:
-                self.ai_score += 1
-
+            t0.is_matched = t1.is_matched = True
+            if is_player: self.player_score += 1; self.correct_matches += 1
+            else: self.ai_score += 1
             self.selected = []
-
-            if self._all_matched():
-                self._end_game()
-                return
-
-            # Scorer gets another turn
-            if is_player:
-                self.state = STATE_PLAYER_TURN
-            else:
-                self._start_ai_turn()
+            if not is_player: self._start_ai_turn()
         else:
-            # No match — schedule flip-back
-            self.flip_timer      = self.FLIP_BACK_DELAY
-            self.state           = STATE_FLIP_BACK
+            self.flip_timer = self.FLIP_BACK_DELAY; self.state = STATE_FLIP_BACK
 
     def _do_flip_back(self):
-        for idx in self.selected:
-            self.tiles[idx].start_flip(reveal=False)
+        for idx in self.selected: self.tiles[idx].start_flip(reveal=False)
         self.selected = []
-        # Alternate turn
-        if self.player_was_last:
-            self._start_ai_turn()
-        else:
-            self.state = STATE_PLAYER_TURN
+        if self.player_was_last: self._start_ai_turn()
+        else: self.state = STATE_PLAYER_TURN
 
     def _start_ai_turn(self):
-        self.state         = STATE_AI_THINKING
-        self.ai_timer      = self.AI_THINK_DELAY
-        self.ai_flip_stage = 0
-
-    def _all_matched(self):
-        return all(t.is_matched for t in self.tiles)
+        self.state = STATE_AI_THINKING; self.ai_timer = self.AI_THINK_DELAY; self.ai_flip_stage = 0
 
     def _end_game(self):
-        self.state  = STATE_GAME_OVER
-        if self.player_score > self.ai_score:
-            self.winner = "player"
-        elif self.ai_score > self.player_score:
-            self.winner = "ai"
-        else:
-            self.winner = "draw"
+        self.state = STATE_GAME_OVER; self.total_time = int(time.time() - self.start_time)
+        if self.player_score > self.ai_score: self.winner = "player"
+        elif self.ai_score > self.player_score: self.winner = "ai"
+        else: self.winner = "draw"
 
-    # ── AI state machine ──────────────────────────────────
     def _update_ai(self, dt: float):
-        if any(t.is_animating for t in self.tiles):
-            return
-
+        if any(t.is_animating() for t in self.tiles): return
         if self.ai_flip_stage == 0:
-            available = [t.index for t in self.tiles
-                         if not t.is_matched and not t.is_revealed]
-            if len(available) < 2:
-                self.state = STATE_PLAYER_TURN
-                return
-            first, second      = self.ai.choose_moves(available)
-            self.ai_pending    = [first, second]
-            self.ai_timer      = self.AI_THINK_DELAY
-            self.ai_flip_stage = 1
-
+            tiles_data = [{"index": t.index, "color": t.color, "is_matched": t.is_matched, "is_revealed": t.is_revealed} for t in self.tiles]
+            state = GameState(tiles_data, self.ai_memory, self.ai_score, self.player_score, player_turn=False)
+            move = self.ai_engine.get_best_move(state)
+            if not move: 
+                avail = [t.index for t in self.tiles if not t.is_matched and not t.is_revealed]
+                if len(avail) >= 2: move = (avail[0], avail[1])
+                else: self.state = STATE_PLAYER_TURN; return
+            self.ai_pending = list(move); self.ai_timer = self.AI_THINK_DELAY; self.ai_flip_stage = 1
         elif self.ai_flip_stage == 1:
             self.ai_timer -= dt
             if self.ai_timer <= 0:
-                idx = self.ai_pending[0]
-                t   = self.tiles[idx]
-                t.is_revealed = True
-                t.start_flip(reveal=True)
-                self.ai.observe(idx, t.color)
-                self.selected      = [idx]
-                self.ai_timer      = self.AI_FLIP2_DELAY
-                self.ai_flip_stage = 2
-
+                idx = self.ai_pending[0]; t = self.tiles[idx]
+                t.is_revealed = True; t.start_flip(reveal=True)
+                self.ai_memory[idx] = t.color; self.selected = [idx]
+                self.ai_timer = self.AI_FLIP2_DELAY; self.ai_flip_stage = 2; self.sound_trigger = "move"
         elif self.ai_flip_stage == 2:
             self.ai_timer -= dt
             if self.ai_timer <= 0:
-                idx = self.ai_pending[1]
-                t   = self.tiles[idx]
-                t.is_revealed = True
-                t.start_flip(reveal=True)
-                self.ai.observe(idx, t.color)
-                self.selected.append(idx)
-                self.ai_timer      = 0.4
-                self.ai_flip_stage = 3
-
+                idx = self.ai_pending[1]; t = self.tiles[idx]
+                t.is_revealed = True; t.start_flip(reveal=True)
+                self.ai_memory[idx] = t.color; self.selected.append(idx)
+                self.ai_timer = 0.4; self.ai_flip_stage = 3; self.sound_trigger = "move"
         elif self.ai_flip_stage == 3:
             self.ai_timer -= dt
             if self.ai_timer <= 0:
-                self.player_was_last = False
-                self._evaluate_pair(is_player=False)
-                self.ai_flip_stage = 0
+                self.total_moves += 1; self.player_was_last = False; self._evaluate_pair(is_player=False); self.ai_flip_stage = 0
 
-    # ── Read-only state ───────────────────────────────────
     @property
     def turn_label(self):
-        if self.state == STATE_GAME_OVER:
-            return "GAME OVER"
-        if self.state == STATE_PLAYER_TURN:
-            return "PLAYER TURN"
-        if self.state in (STATE_AI_THINKING, STATE_FLIP_BACK):
-            if not self.player_was_last or self.state == STATE_AI_THINKING:
-                return "AI TURN"
-        return "AI TURN" if not self.player_was_last else "PLAYER TURN"
+        if self.state == STATE_GAME_OVER: return "GAME OVER"
+        if self.state == STATE_PLAYER_TURN: return "PLAYER TURN"
+        return "AI TURN"
+
+    def serialize(self):
+        return {
+            "player_score": self.player_score, "ai_score": self.ai_score, "total_moves": self.total_moves,
+            "correct_matches": self.correct_matches, "total_time": self.total_time, "state": self.state,
+            "tiles": [{"index": t.index, "color": t.color, "is_revealed": t.is_revealed, "is_matched": t.is_matched} for t in self.tiles],
+            "ai_memory": self.ai_memory, "player_was_last": self.player_was_last
+        }
+
+    def deserialize(self, data):
+        self.player_score = data["player_score"]; self.ai_score = data["ai_score"]
+        self.total_moves = data["total_moves"]; self.correct_matches = data["correct_matches"]
+        self.total_time = data["total_time"]; self.start_time = time.time() - self.total_time
+        self.state = data["state"]; self.ai_memory = data["ai_memory"]; self.player_was_last = data["player_was_last"]
+        for i, t_data in enumerate(data["tiles"]):
+            t = self.tiles[i]
+            t.is_revealed = t_data["is_revealed"]; t.is_matched = t_data["is_matched"]
