@@ -5,7 +5,7 @@ import random
 
 class SoundManager:
     def __init__(self):
-        pygame.mixer.init(frequency=44100, size=-16, channels=2)
+        pygame.mixer.init(frequency=44100, size=-16, channels=1) # Mono is more reliable for generated tones
         self.enabled = True
         self.sounds = {
             "click": self._gen_tone(440, 0.05),
@@ -15,9 +15,10 @@ class SoundManager:
             "win": self._gen_tone(1100, 0.5),
         }
         self.bg_music = self._gen_music()
+        self.bg_music.set_volume(0.5) # Set a base volume
         self.bg_music.play(-1) # Loop forever
 
-    def _gen_tone(self, freq, duration, vol=0.3):
+    def _gen_tone(self, freq, duration, vol=0.8): # Increased from 0.3
         sample_rate = 44100
         n_samples = int(sample_rate * duration)
         buf = array.array('h', [0] * n_samples)
@@ -53,7 +54,7 @@ class SoundManager:
             # Add a tiny bit of "air" (soft noise-like component)
             air = (random.random() * 2 - 1) * 0.02
             
-            final_val = (val + air) * (0.05 + 0.05 * mod1)
+            final_val = (val + air) * (0.6 + 0.3 * mod1) # Significantly boosted for audibility
             buf[i] = int(final_val * 32767)
             
         return pygame.mixer.Sound(buf)
@@ -62,7 +63,9 @@ class SoundManager:
         if self.enabled and key in self.sounds:
             self.sounds[key].play()
 
-    def set_volume(self, vol):
+    def set_sound_volume(self, vol):
         for s in self.sounds.values():
             s.set_volume(vol)
-        self.bg_music.set_volume(vol * 0.5)
+
+    def set_music_volume(self, vol):
+        self.bg_music.set_volume(vol)

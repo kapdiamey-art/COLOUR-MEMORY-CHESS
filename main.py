@@ -51,6 +51,8 @@ class App:
         self.sound_vol = 0.7
         self.music_vol = 0.5
         self._build_ui()
+        self.audio.set_sound_volume(self.sound_vol)
+        self.audio.set_music_volume(self.music_vol)
         self.fade.start()
 
     def _build_ui(self):
@@ -66,8 +68,7 @@ class App:
             Button(W//2, H//2 + 260, bw, bh, "SETTINGS", (80, 80, 120), f, "⚙️"),
             Button(W//2, H//2 + 335, bw, bh, "EXIT", C_DANGER, f, "❌")
         ]
-        self.pause_btn = Button(W//2 - 90, H - 45, 160, 50, "PAUSE", (60, 60, 100), f_sm, "⏸️")
-        self.hint_btn = Button(W//2 + 90, H - 45, 160, 50, "HINT", C_GOLD, f_sm, "💡")
+        self.pause_btn = Button(W//2, H - 45, 180, 50, "PAUSE", (60, 60, 100), f_sm, "⏸️")
         pbw = 240
         self.pause_btns = [
             Button(W//2, H//2 - 60, pbw, 55, "RESUME", C_SUCCESS, f_sm, "▶️"),
@@ -107,8 +108,12 @@ class App:
             if self.menu_btns[0].on_click(mx, my): self.go_to(SCREEN_NAME_INPUT)
             if self.menu_btns[1].on_click(mx, my):
                 saves = self.db.get_saved_games()
-                if saves: self._load_game(saves[0]["_id"])
-                else: self.go_to(SCREEN_NAME_INPUT)
+                if not saves:
+                    self.go_to(SCREEN_NAME_INPUT)
+                elif len(saves) == 1:
+                    self._load_game(saves[0]["_id"])
+                else:
+                    self.go_to(SCREEN_LOAD)
             if self.menu_btns[2].on_click(mx, my): self.go_to(SCREEN_LOAD)
             if self.menu_btns[3].on_click(mx, my): self.go_to(SCREEN_HISTORY)
             if self.menu_btns[4].on_click(mx, my): self.go_to(SCREEN_SETTINGS)
@@ -157,7 +162,7 @@ class App:
         save = self.db.load_game(save_id)
         if save:
             self.game = Game(W, H); self.game.deserialize(save["board"])
-            self.player_name = save.get("player", self.player_name); self.game.player_name = self.player_name; self.go_to(SCREEN_GAME)
+            self.player_name = save.get("player_name", self.player_name); self.game.player_name = self.player_name; self.go_to(SCREEN_GAME)
 
     def update(self, dt):
         self.title_t += dt; self.particles.update(); self.fade.update(dt)
@@ -180,7 +185,7 @@ class App:
             old_s_p, old_s_ai = self.game.player_score, self.game.ai_score; self.game.update(dt)
             if self.game.sound_trigger: self.audio.play(self.game.sound_trigger); self.game.sound_trigger = None
             if self.game.player_score > old_s_p or self.game.ai_score > old_s_ai: self.audio.play("match")
-            self.pause_btn.update(mx, my, dt); self.hint_btn.update(mx, my, dt)
+            self.pause_btn.update(mx, my, dt)
             if self.game.state == "game_over":
                 if not hasattr(self, '_go_trig'): self._go_trig = True; self._go_timer = 2.0; self.audio.play("win")
                 self._go_timer -= dt
@@ -191,8 +196,12 @@ class App:
             for b in self.pause_btns: b.update(mx, my, dt)
             for s in self.pause_sliders:
                 s.update(mx, my, clicked)
-                if s.label == "Music": self.music_vol = s.value
-                else: self.sound_vol = s.value; self.audio.set_volume(s.value)
+                if s.label == "Music": 
+                    self.music_vol = s.value
+                    self.audio.set_music_volume(s.value)
+                else: 
+                    self.sound_vol = s.value
+                    self.audio.set_sound_volume(s.value)
         elif self.screen_id == SCREEN_SAVE: self.save_confirm_btn.update(mx, my, dt); self.back_btn.update(mx, my, dt)
         elif self.screen_id == SCREEN_LOAD:
             if hasattr(self, 'load_btns'):
@@ -209,7 +218,7 @@ class App:
         s = self.screen_id
         if s == SCREEN_NAME_INPUT: draw_name_input(self.screen, [self.start_confirm_btn], self.player_name)
         elif s == SCREEN_MENU: draw_menu(self.screen, self.menu_btns, self.title_t)
-        elif s == SCREEN_GAME: draw_game_screen(self.screen, self.game, [self.pause_btn, self.hint_btn])
+        elif s == SCREEN_GAME: draw_game_screen(self.screen, self.game, [self.pause_btn])
         elif s == SCREEN_PAUSE: draw_pause_menu(self.screen, self.pause_btns, self.pause_sliders)
         elif s == SCREEN_SAVE: draw_save_game(self.screen, [self.save_confirm_btn, self.back_btn], self.save_name)
         elif s == SCREEN_LOAD:

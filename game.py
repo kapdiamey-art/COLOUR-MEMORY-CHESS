@@ -209,6 +209,7 @@ class Game:
         return {
             "player_score": self.player_score, "ai_score": self.ai_score, "total_moves": self.total_moves,
             "correct_matches": self.correct_matches, "total_time": self.total_time, "state": self.state,
+            "difficulty": self.ai_engine.difficulty,
             "tiles": [{"index": t.index, "color": t.color, "is_revealed": t.is_revealed, "is_matched": t.is_matched} for t in self.tiles],
             "ai_memory": self.ai_memory, "player_was_last": self.player_was_last
         }
@@ -217,7 +218,10 @@ class Game:
         self.player_score = data["player_score"]; self.ai_score = data["ai_score"]
         self.total_moves = data["total_moves"]; self.correct_matches = data["correct_matches"]
         self.total_time = data["total_time"]; self.start_time = time.time() - self.total_time
-        self.state = data["state"]; self.ai_memory = data["ai_memory"]; self.player_was_last = data["player_was_last"]
+        self.state = data["state"]; self.ai_memory = {int(k): tuple(v) for k, v in data["ai_memory"].items()}
+        self.player_was_last = data["player_was_last"]
+        if "difficulty" in data: self.ai_engine.difficulty = data["difficulty"]
         for i, t_data in enumerate(data["tiles"]):
             t = self.tiles[i]
+            t.color = tuple(t_data["color"]) # Restore color!
             t.is_revealed = t_data["is_revealed"]; t.is_matched = t_data["is_matched"]
