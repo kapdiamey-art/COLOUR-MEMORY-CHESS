@@ -368,9 +368,9 @@ def draw_game_history(surf, buttons, history):
             # Format date
             date_str = str(entry['date'])[:16] # YYYY-MM-DD HH:MM
             # Format score
-            if isinstance(entry['score'], dict):
-                score_str = f"{entry['score'].get('player', 0)}-{entry['score'].get('ai', 0)}"
-            else: score_str = str(entry['score'])
+            p_score = entry.get('player_score', 0)
+            a_score = entry.get('ai_score', 0)
+            score_str = f"{p_score}-{a_score}"
             
             winner = entry['winner'].upper()
             txt = f"📅 {date_str} - {winner} WON ({score_str})"

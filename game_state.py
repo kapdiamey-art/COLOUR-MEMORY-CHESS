@@ -1,4 +1,5 @@
 import copy
+import random
 
 class GameState:
     def __init__(self, tiles_data, ai_memory, ai_score, player_score, player_turn=True):
@@ -29,10 +30,11 @@ class GameState:
                 # If we have a match, that's the only move we care about (dominant)
                 return [(indices[0], indices[1])]
         
-        # 2. No known matches? Limit the search to a few unknown tiles
-        # Instead of 276 pairs, just try the first few available
+        # 2. No known matches? Limit the search to a random subset of unknown tiles
+        # Instead of 276 pairs, just try a few random ones
         moves = []
-        limit = 6 # Only consider first 6 available tiles (~15 pairs)
+        limit = 6 
+        random.shuffle(available) # Shuffle to avoid repetitive choices
         subset = available[:limit]
         for i in range(len(subset)):
             for j in range(i + 1, len(subset)):
@@ -65,7 +67,7 @@ class GameState:
         t1, t2 = new_state.tiles[idx1], new_state.tiles[idx2]
         
         # If both are in memory or we know they match
-        if t1['color'] == t2['color']:
+        if t1['color'] is not None and t2['color'] is not None and t1['color'] == t2['color']:
             t1['is_matched'] = True
             t2['is_matched'] = True
             if new_state.player_turn:

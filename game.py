@@ -172,13 +172,26 @@ class Game:
     def _update_ai(self, dt: float):
         if any(t.is_animating() for t in self.tiles): return
         if self.ai_flip_stage == 0:
-            tiles_data = [{"index": t.index, "color": t.color, "is_matched": t.is_matched, "is_revealed": t.is_revealed} for t in self.tiles]
+            tiles_data = []
+            for t in self.tiles:
+                # AI only 'knows' colors that are in its memory or already matched
+                color = t.color if (t.index in self.ai_memory or t.is_matched) else None
+                tiles_data.append({
+                    "index": t.index, 
+                    "color": color, 
+                    "is_matched": t.is_matched, 
+                    "is_revealed": t.is_revealed
+                })
+                
             state = GameState(tiles_data, self.ai_memory, self.ai_score, self.player_score, player_turn=False)
             move = self.ai_engine.get_best_move(state)
             if not move: 
                 avail = [t.index for t in self.tiles if not t.is_matched and not t.is_revealed]
-                if len(avail) >= 2: move = (avail[0], avail[1])
-                else: self.state = STATE_PLAYER_TURN; return
+                if len(avail) >= 2: 
+                    move = tuple(random.sample(avail, 2))
+                else: 
+                    self.state = STATE_PLAYER_TURN
+                    return
             self.ai_pending = list(move); self.ai_timer = self.AI_THINK_DELAY; self.ai_flip_stage = 1
         elif self.ai_flip_stage == 1:
             self.ai_timer -= dt
